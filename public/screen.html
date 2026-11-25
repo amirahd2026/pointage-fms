@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>QR de pointage</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<style>
+*{box-sizing:border-box}
+html,body{margin:0;height:100%}
+body{font-family:Poppins,Arial,sans-serif;background:#00543f;color:#fff;display:flex;flex-direction:column}
+.head{padding:3vh 4vw 0;display:flex;justify-content:space-between;align-items:flex-start;gap:3vw}
+.brand{font-weight:700;letter-spacing:.3vh;font-size:1.8vh;color:#91c696}
+h1{margin:.6vh 0 0;font-size:4.4vh;line-height:1.15;max-width:60vw}
+.sub{color:#d6ebdf;font-size:2.2vh}
+.count{text-align:right}
+.count b{font-size:9vh;line-height:1;display:block}
+.count span{font-size:2vh;color:#d6ebdf}
+.main{flex:1;display:flex;align-items:center;justify-content:center;gap:5vw;padding:2vh 4vw 3vh}
+.qrbox{background:#fff;border-radius:3vh;padding:2.5vh;box-shadow:0 2vh 6vh rgba(0,0,0,.25)}
+#qr{width:62vh;height:62vh;display:block}
+.bar{height:1vh;background:#e6efe9;border-radius:1vh;margin-top:2vh;overflow:hidden}
+.bar i{display:block;height:100%;background:#39b54a;width:100%}
+.steps{max-width:34vw;font-size:2.6vh;line-height:1.5}
+.steps ol{padding-left:1.2em;margin:0}
+.steps li{margin-bottom:1.6vh}
+.closed{font-size:4vh;font-weight:700;text-align:center}
+.tools{position:fixed;right:1.5vw;bottom:1.5vh;display:flex;gap:8px}
+.tools button{background:rgba(255,255,255,.12);color:#fff;border:0;border-radius:20px;padding:8px 14px;font:inherit;font-size:13px;cursor:pointer}
+@media(max-aspect-ratio:1/1){.main{flex-direction:column}.steps{max-width:none}#qr{width:70vw;height:70vw}}
+</style>
+</head>
+<body>
+<div class="head">
+  <div><div class="brand">UM6P · FMS · POINTAGE DE PRÉSENCE</div><h1 id="name">Chargement…</h1><div class="sub" id="meta"></div></div>
+  <div class="count"><b id="count">0</b><span>présents</span></div>
+</div>
+<div class="main">
+  <div class="qrbox" id="box"><canvas id="qr" width="800" height="800"></canvas><div class="bar"><i id="bar"></i></div></div>
+  <div class="steps">
+    <ol>
+      <li>Scannez le QR code avec l'appareil photo de votre téléphone.</li>
+      <li>Indiquez votre nom et votre email UM6P.</li>
+      <li>Autorisez la localisation et validez.</li>
+    </ol>
+    <p style="color:#91c696;font-size:2.1vh;margin-top:3vh">Le QR code change toutes les 10 secondes : une photo partagée ne fonctionne pas.</p>
+  </div>
+</div>
+<div class="tools"><button id="fs">Plein écran</button><button id="toggle">Fermer le pointage</button></div>
+<script>
+{
+const id=new URLSearchParams(location.search).get('id');
+let key='';try{key=sessionStorage.getItem('pt_admin')||localStorage.getItem('pt_admin')||'';}catch(e){}
+if(!key){key=prompt('Code administrateur');try{sessionStorage.setItem('pt_admin',key);}catch(e){}}
+const cv=document.getElementById('qr'),cx=cv.getContext('2d');
+let open=true,lastTok='',endAt=0;
+function draw(url){
+  const q=qrcode(0,'M');q.addData(url);q.make();
+  const n=q.getModuleCount(),m=800/(n+2);cx.fillStyle='#fff';cx.fillRect(0,0,800,800);cx.fillStyle='#00543f';
+  for(let r=0;r<n;r++)for(let c=0;c<n;c++)if(q.isDark(r,c))cx.fillRect(Math.floor((c+1)*m),Math.floor((r+1)*m),Math.ceil(m),Math.ceil(m));
+}
+async function refresh(){
+  try{
+    const r=await fetch('/api/admin/token?id='+encodeURIComponent(id),{headers:{'x-admin-key':key},cache:'no-store'}).then(r=>r.json());
+    if(!r.ok){document.getElementById('name').textContent=r.error;if(/administrateur/.test(r.error)){try{sessionStorage.removeItem('pt_admin');}catch(e){}}setTimeout(refresh,5000);return;}
+    document.getElementById('name').textContent=r.name;
+    document.getElementById('meta').textContent=r.type+' · '+new Date(r.date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    document.getElementById('count').textContent=r.count;
+    open=r.open;document.getElementById('toggle').textContent=open?'Fermer le pointage':'Rouvrir le pointage';
+    const box=document.getElementById('box');
+    if(!open){box.innerHTML='<div class="closed" style="color:#00543f;padding:8vh 6vh">Pointage fermé</div>';}
+    else{if(!document.getElementById('qr'))location.reload();if(r.token!==lastTok){lastTok=r.token;draw(location.origin+'/?s='+encodeURIComponent(id)+'&t='+r.token);}}
+    endAt=Date.now()+r.msLeft;setTimeout(refresh,Math.max(300,r.msLeft+150));
+  }catch(e){setTimeout(refresh,3000);}
+}
+(function anim(){const left=Math.max(0,endAt-Date.now());const b=document.getElementById('bar');if(b)b.style.width=(left/100)+'%';requestAnimationFrame(anim);})();
+document.getElementById('fs').onclick=()=>{document.documentElement.requestFullscreen?.().catch(()=>{});};
+document.getElementById('toggle').onclick=async()=>{
+  if(open&&!confirm('Fermer le pointage ? Plus personne ne pourra pointer.'))return;
+  await fetch('/api/admin/open',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,id,open:!open})});location.reload();
+};
+refresh();
+}
+</script>
+</body>
+</html>
