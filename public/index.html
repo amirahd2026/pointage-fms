@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pointage de présence – FMS UM6P</title>
+<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css">
+<style>.wrap{max-width:560px}</style>
+</head>
+<body>
+<div class="top"><div class="brand">UM6P · FMS · UM6P HOSPITALS</div><h1>Pointage de présence</h1></div>
+<div class="wrap">
+  <div class="card" id="noqr" hidden>
+    <h2>Scannez le QR code de la salle</h2>
+    <p class="muted">Pour pointer votre présence, scannez avec l'appareil photo de votre téléphone le QR code affiché sur l'écran de la salle.</p>
+  </div>
+
+  <div class="card" id="main" hidden>
+    <span class="badge" id="stype"></span>
+    <h2 id="sname" style="margin-top:10px"></h2>
+    <p class="muted" id="sdate" style="margin-top:-6px"></p>
+
+    <form id="f" novalidate>
+      <label for="name">Nom et prénom</label>
+      <input id="name" autocomplete="name" required>
+      <label for="email">Email UM6P</label>
+      <input id="email" type="email" autocomplete="email" placeholder="prenom.nom@um6p.ma" required>
+      <p class="muted" style="margin:12px 0 0">Votre position sera vérifiée une seule fois pour confirmer que vous êtes sur le campus.</p>
+      <div class="err" id="err" role="alert"></div>
+      <button type="submit" id="go" style="width:100%">Je suis présent(e)</button>
+      <p class="muted" id="timer" style="text-align:center;margin:10px 0 0"></p>
+    </form>
+    <div class="okbox" id="ok" hidden></div>
+  </div>
+
+  <div class="card" id="fatal" hidden><h2>Pointage impossible</h2><p class="err" id="fatalmsg" style="margin:0"></p></div>
+</div>
+<script>
+{
+const q=new URLSearchParams(location.search), id=q.get('s'), t=q.get('t');
+const $=i=>document.getElementById(i);
+let device; try{device=localStorage.getItem('pt_device');if(!device){device=crypto.randomUUID();localStorage.setItem('pt_device',device);}}catch(e){device=crypto.randomUUID();}
+let pass=null, ts=0, timerId=null;
+const fatal=m=>{$('main').hidden=true;$('fatal').hidden=false;$('fatalmsg').textContent=m;};
+const fmtDate=d=>{try{return new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});}catch(e){return d;}};
+try{$('name').value=localStorage.getItem('pt_name')||'';$('email').value=localStorage.getItem('pt_email')||'';}catch(e){}
+
+async function api(path,body){const r=await fetch('/api/'+path,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});return r.json().catch(()=>({ok:false,error:'Erreur réseau. Réessayez.'}));}
+
+if(!id||!t){$('noqr').hidden=false;}
+else{
+  // retire le jeton de l'adresse pour qu'une capture de la page ne serve à rien
+  history.replaceState(null,'',location.pathname+'?s='+encodeURIComponent(id));
+  api('claim',{id,t,device}).then(r=>{
+    if(!r.ok){fatal(r.error);return;}
+    pass=r.pass;ts=r.ts;
+    $('main').hidden=false;$('stype').textContent=r.session.type.toUpperCase();$('sname').textContent=r.session.name;$('sdate').textContent=fmtDate(r.session.date);
+    const tick=()=>{const left=Math.max(0,Math.round((ts+4*60000-Date.now())/1000));$('timer').textContent=left?`Temps restant pour valider : ${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`:'Délai dépassé : scannez à nouveau le QR code.';if(!left){$('go').disabled=true;clearInterval(timerId);}};
+    tick();timerId=setInterval(tick,1000);
+  }).catch(()=>fatal('Connexion impossible. Vérifiez votre accès à Internet puis rescannez le QR code.'));
+}
+
+function locate(){return new Promise((res,rej)=>{
+  if(!navigator.geolocation)return rej(new Error('Votre navigateur ne permet pas la localisation.'));
+  navigator.geolocation.getCurrentPosition(p=>res(p.coords),e=>rej(new Error(e.code===1?'Autorisez l’accès à votre position (réglages du navigateur), puis réessayez.':'Position introuvable. Activez la localisation et réessayez.')),{enableHighAccuracy:true,timeout:15000,maximumAge:0});
+});}
+
+$('f').addEventListener('submit',async e=>{
+  e.preventDefault();$('err').textContent='';
+  const name=$('name').value.trim(),email=$('email').value.trim();
+  if(name.length<3){$('err').textContent='Indiquez votre nom et prénom.';return;}
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)){$('err').textContent='Indiquez une adresse email valide.';return;}
+  $('go').disabled=true;$('go').textContent='Vérification de la position…';
+  let c;try{c=await locate();}catch(x){$('err').textContent=x.message;$('go').disabled=false;$('go').textContent='Je suis présent(e)';return;}
+  $('go').textContent='Enregistrement…';
+  const r=await api('checkin',{id,pass,ts,device,name,email,lat:c.latitude,lng:c.longitude,acc:c.accuracy});
+  if(!r.ok){$('err').textContent=r.error;$('go').disabled=false;$('go').textContent='Je suis présent(e)';return;}
+  try{localStorage.setItem('pt_name',name);localStorage.setItem('pt_email',email);}catch(x){}
+  clearInterval(timerId);$('f').hidden=true;$('ok').hidden=false;
+  const h=new Date(r.at).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+  $('ok').textContent=r.already?`Vous étiez déjà enregistré(e) (${r.name}, à ${h}). Rien d'autre à faire.`:`Présence enregistrée à ${h}. Merci ${r.name} !`;
+});
+}
+</script>
+</body>
+</html>
