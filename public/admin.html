@@ -3,12 +3,28 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Administration – Pointage FMS</title>
+<title>Administration – Planning et pointage FMS</title>
 <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/style.css">
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+<script src="/import.js"></script>
+<style>
+.tabs{display:flex;gap:6px;flex-wrap:wrap;margin:-8px 0 20px}
+.tabs button{background:#fff;color:var(--main);border:2px solid var(--line);min-height:40px}
+.tabs button.on{background:var(--main);color:#fff;border-color:var(--main)}
+.day{margin:22px 0 8px;font-weight:700;color:var(--main);font-size:16px}
+td input.cell{padding:6px 8px;font-size:13px;border-width:1px;border-radius:8px;min-width:96px}
+td input.cell.saved{border-color:var(--bright);background:#eef8f0}
+.pill{font-size:12px;color:var(--muted)}
+.drop2{border:2px dashed var(--soft);border-radius:14px;padding:20px;text-align:center;background:#f6faf7}
+.file{border:1px solid var(--line);border-radius:14px;padding:14px;margin-top:12px}
+.sticky{position:sticky;top:0;background:var(--cream);z-index:2;padding:10px 0}
+.miss{background:#fcebd9}
+.wrap{max-width:1500px}
+</style>
 </head>
 <body>
-<div class="top"><div class="brand">UM6P · FMS · ADMINISTRATION</div><h1>Pointage de présence</h1></div>
+<div class="top"><div class="brand">UM6P · FMS · ADMINISTRATION</div><h1>Planning et pointage</h1></div>
 <div class="wrap">
 
   <div class="card" id="login" hidden>
@@ -19,109 +35,268 @@
   </div>
 
   <div id="app" hidden>
-    <div class="card">
-      <h2>Nouvelle séance</h2>
-      <form id="nf" class="grid">
-        <div><label for="nname">Nom</label><input id="nname" placeholder="Ex. Cours de cardiologie – 3e année"></div>
-        <div><label for="ntype">Type</label><select id="ntype"><option>Cours</option><option>Événement</option></select></div>
-        <div><label for="ndate">Date</label><input id="ndate" type="date"></div>
-        <div style="grid-column:1/-1" class="row"><button>Créer la séance</button><span class="err" id="nerr" style="margin:0"></span></div>
-      </form>
+    <div class="tabs" role="tablist">
+      <button data-tab="planning" class="on">Planning de la semaine</button>
+      <button data-tab="import">Importer un planning</button>
+      <button data-tab="promos">Promotions et étudiants</button>
+      <button data-tab="events">Événements</button>
+      <button class="ghost" id="logout" style="margin-left:auto">Se déconnecter</button>
     </div>
 
-    <div class="card">
-      <div class="row" style="justify-content:space-between"><h2 style="margin:0">Séances</h2>
-        <div class="row"><button class="ghost small" id="exportAll">Exporter toutes les présences (Excel)</button><button class="ghost small" id="logout">Se déconnecter</button></div></div>
-      <div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>Date</th><th>Séance</th><th class="hide-sm">Type</th><th>Présents</th><th>Pointage</th><th></th></tr></thead><tbody id="list"></tbody></table></div>
-      <p class="muted" id="empty" hidden>Aucune séance pour l'instant. Créez-en une ci-dessus.</p>
-    </div>
+    <!-- PLANNING -->
+    <section id="t-planning">
+      <div class="card">
+        <div class="row" style="justify-content:space-between">
+          <div class="row"><button class="ghost small" id="prevW">‹ Semaine précédente</button><input type="date" id="weekDate" style="width:auto"><button class="ghost small" id="nextW">Semaine suivante ›</button></div>
+          <div class="row"><select id="promoFilter" style="width:auto"><option value="">Toutes les promotions</option></select><button class="ghost small" id="exportWeek">Exporter la semaine (Excel)</button></div>
+        </div>
+        <p class="muted" id="weekInfo" style="margin:12px 0 0"></p>
+        <p class="muted" style="margin:6px 0 0">Salle, enseignant et horaires se modifient directement dans le tableau : la modification est enregistrée dès que vous quittez la case.</p>
+      </div>
+      <div class="card" style="overflow-x:auto"><div id="weekTable"></div></div>
+    </section>
 
+    <!-- IMPORT -->
+    <section id="t-import" hidden>
+      <div class="card">
+        <h2>Importer des plannings Excel</h2>
+        <p class="muted">Formats reconnus : planning du semestre Médecine / Pharmacie, planning de la semaine Kinésithérapie / Soins infirmiers, ou le modèle FMS (une ligne par cours). Vous pouvez sélectionner plusieurs fichiers à la fois. Réimporter un fichier met à jour les cours sans effacer les salles et enseignants déjà saisis.</p>
+        <label class="drop2" for="files"><b style="color:var(--main)">Choisir les fichiers Excel</b><br><span class="muted">.xlsx</span></label>
+        <input type="file" id="files" accept=".xlsx,.xls" multiple style="position:absolute;opacity:0;width:1px;height:1px">
+        <div id="fileList"></div>
+        <div class="row" style="margin-top:16px"><button id="importAll" hidden>Importer tous les fichiers</button><span class="muted" id="importMsg"></span></div>
+      </div>
+    </section>
+
+    <!-- PROMOTIONS -->
+    <section id="t-promos" hidden>
+      <div class="card">
+        <h2>Listes d'étudiants par promotion</h2>
+        <div style="overflow-x:auto"><table><thead><tr><th>Promotion</th><th>Étudiants</th><th>Mise à jour</th></tr></thead><tbody id="promoList"></tbody></table></div>
+      </div>
+      <div class="card">
+        <h2>Importer ou remplacer une liste</h2>
+        <label for="promoSel">Promotion</label><select id="promoSel"></select>
+        <label for="promoText">Coller la liste (format Outlook « Prénom NOM » &lt;email&gt;; … ou une ligne par étudiant)</label>
+        <textarea id="promoText" rows="6" placeholder='"Amina ALAOUI" <Amina.ALAOUI@um6p.ma>; "Youssef BENNANI" <Youssef.BENNANI@um6p.ma>'></textarea>
+        <label for="promoFile">ou choisir un fichier Excel (colonnes Nom, Prénom, Email, Groupe facultatif)</label>
+        <input type="file" id="promoFile" accept=".xlsx,.xls,.csv">
+        <div class="row" style="margin-top:12px"><button class="ghost" id="promoPreview">Vérifier</button><button id="promoSave" disabled>Enregistrer la liste</button><span class="muted" id="promoMsg"></span></div>
+        <div style="overflow-x:auto;max-height:320px;margin-top:12px"><table><tbody id="promoRows"></tbody></table></div>
+      </div>
+    </section>
+
+    <!-- EVENTS -->
+    <section id="t-events" hidden>
+      <div class="card">
+        <h2>Nouvel événement</h2>
+        <form id="nf" class="grid">
+          <div><label for="nname">Nom</label><input id="nname" placeholder="Ex. Conférence Blue November"></div>
+          <div><label for="ntype">Type</label><select id="ntype"><option>Événement</option><option>Cours</option></select></div>
+          <div><label for="ndate">Date</label><input id="ndate" type="date"></div>
+          <div style="grid-column:1/-1" class="row"><button>Créer</button><span class="err" id="nerr" style="margin:0"></span></div>
+        </form>
+      </div>
+      <div class="card">
+        <div class="row" style="justify-content:space-between"><h2 style="margin:0">Événements</h2><button class="ghost small" id="exportAll">Exporter toutes les présences (Excel)</button></div>
+        <div style="overflow-x:auto;margin-top:12px"><table><thead><tr><th>Date</th><th>Événement</th><th>Présents</th><th>Pointage</th><th></th></tr></thead><tbody id="list"></tbody></table></div>
+        <p class="muted" id="empty" hidden>Aucun événement pour l'instant.</p>
+      </div>
+    </section>
+
+    <!-- DÉTAIL PRÉSENCES (cours ou événement) -->
     <div class="card" id="detail" hidden>
       <div class="row" style="justify-content:space-between"><h2 id="dname" style="margin:0"></h2><button class="ghost small" id="dclose">Fermer</button></div>
       <p class="muted" id="dmeta"></p>
-      <div class="row"><a class="btn" id="dscreen" target="_blank">Afficher le QR code</a><button class="ghost" id="dexport">Exporter les présents (Excel)</button></div>
-
-      <h2 style="margin-top:26px">Comparer avec la liste des inscrits</h2>
-      <p class="muted" style="margin-top:-6px">Collez la liste attendue, une personne par ligne : l'email seul, ou « Nom ; email » (copier-coller depuis Excel fonctionne).</p>
-      <textarea id="roster" rows="5" placeholder="Amina Alaoui ; amina.alaoui@um6p.ma"></textarea>
-      <div class="row" style="margin-top:10px"><button class="ghost small" id="compare">Comparer</button><span class="muted" id="cmpsum"></span><button class="ghost small" id="cmpexport" hidden>Exporter présents / absents</button></div>
-
-      <div style="overflow-x:auto;margin-top:16px"><table><thead><tr><th>Nom</th><th>Email</th><th>Heure</th><th id="statusCol" hidden>Statut</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
+      <div class="row"><a class="btn" id="dscreen" target="_blank">Afficher le QR code</a><button class="ghost" id="dexport">Exporter (Excel)</button><span class="muted" id="dsum"></span></div>
+      <div id="manualCmp">
+        <h2 style="margin-top:26px">Comparer avec une liste</h2>
+        <p class="muted" style="margin-top:-6px">Collez la liste attendue (emails, ou format Outlook).</p>
+        <textarea id="roster" rows="4"></textarea>
+        <div class="row" style="margin-top:10px"><button class="ghost small" id="compare">Comparer</button></div>
+      </div>
+      <div style="overflow-x:auto;margin-top:16px"><table><thead><tr><th>Nom</th><th>Email</th><th>Heure</th><th>Statut</th><th></th></tr></thead><tbody id="rows"></tbody></table></div>
     </div>
   </div>
 </div>
 <script>
 {
+const PROMOS=[...[1,2,3,4,5].map(i=>'Médecine '+i),...[1,2,3,4,5].map(i=>'Pharmacie '+i),...[1,2,3].map(i=>'Soins infirmiers '+i),'Kinésithérapie 1'];
+const JOURS=['Lundi','Mardi','Mercredi','Jeudi','Vendredi','Samedi','Dimanche'];
 const $=i=>document.getElementById(i);
 let key='';try{key=sessionStorage.getItem('pt_admin')||localStorage.getItem('pt_admin')||'';}catch(e){}
-let sessions=[],current=null,rows=[],cmp=null;
 const esc=s=>String(s??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fmtD=d=>new Date(d+'T12:00:00').toLocaleDateString('fr-FR',{day:'2-digit',month:'2-digit',year:'numeric'});
-const fmtT=s=>new Date(s).toLocaleString('fr-FR',{hour:'2-digit',minute:'2-digit'});
-async function get(p){return fetch('/api/'+p,{headers:{'x-admin-key':key},cache:'no-store'}).then(r=>r.json());}
-async function post(p,b){return fetch('/api/'+p,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,...b})}).then(r=>r.json());}
-function csv(name,head,data){
-  const cell=v=>{v=String(v??'');return /[;"\n]/.test(v)?'"'+v.replace(/"/g,'""')+'"':v;};
-  const txt='﻿'+[head,...data].map(r=>r.map(cell).join(';')).join('\r\n');
-  const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([txt],{type:'text/csv;charset=utf-8'}));a.download=name+'.csv';document.body.appendChild(a);a.click();a.remove();
-}
-const safe=s=>s.replace(/[\\/:*?"<>|]/g,'').slice(0,80);
+const fmtT=s=>new Date(s).toLocaleTimeString('fr-FR',{hour:'2-digit',minute:'2-digit'});
+async function get(p){return fetch('/api/'+p,{headers:{'x-admin-key':key},cache:'no-store'}).then(r=>r.json()).catch(()=>({ok:false,error:'Erreur réseau'}));}
+async function post(p,b){return fetch('/api/'+p,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({key,...b})}).then(r=>r.json()).catch(()=>({ok:false,error:'Erreur réseau'}));}
+function xlsx(name,head,data){const ws=XLSX.utils.aoa_to_sheet([head,...data]);ws['!cols']=head.map(h=>({wch:Math.max(12,h.length+4)}));const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Présences');XLSX.writeFile(wb,name.replace(/[\\/:*?"<>|]/g,'').slice(0,90)+'.xlsx');}
+const mondayOf=d=>{const t=new Date(d+'T12:00:00Z');t.setUTCDate(t.getUTCDate()-((t.getUTCDay()+6)%7));return t.toISOString().slice(0,10);};
+const addDays=(d,n)=>{const t=new Date(d+'T12:00:00Z');t.setUTCDate(t.getUTCDate()+n);return t.toISOString().slice(0,10);};
 
+// ---------- connexion & onglets ----------
 async function start(){
   if(!key){$('login').hidden=false;return;}
   const r=await get('admin/check');
   if(!r.ok){key='';try{sessionStorage.removeItem('pt_admin');localStorage.removeItem('pt_admin');}catch(e){}$('login').hidden=false;$('lerr').textContent=r.error||'';return;}
-  $('login').hidden=true;$('app').hidden=false;$('ndate').value=new Date().toISOString().slice(0,10);load();
+  $('login').hidden=true;$('app').hidden=false;
+  $('promoFilter').innerHTML+=PROMOS.map(p=>`<option>${p}</option>`).join('');
+  $('promoSel').innerHTML=PROMOS.map(p=>`<option>${p}</option>`).join('');
+  $('ndate').value=new Date().toISOString().slice(0,10);
+  $('weekDate').value=mondayOf(new URLSearchParams(location.search).get('semaine')||new Date().toISOString().slice(0,10));
+  loadWeek();
 }
 $('lf').onsubmit=e=>{e.preventDefault();key=$('key').value.trim();try{sessionStorage.setItem('pt_admin',key);if($('remember').checked)localStorage.setItem('pt_admin',key);}catch(x){}start();};
 $('logout').onclick=()=>{try{sessionStorage.removeItem('pt_admin');localStorage.removeItem('pt_admin');}catch(e){}location.reload();};
+document.querySelector('.tabs').onclick=e=>{const b=e.target.closest('button[data-tab]');if(!b)return;
+  document.querySelectorAll('.tabs button[data-tab]').forEach(x=>x.classList.toggle('on',x===b));
+  ['planning','import','promos','events'].forEach(t=>$('t-'+t).hidden=t!==b.dataset.tab);$('detail').hidden=true;
+  if(b.dataset.tab==='promos')loadPromos();if(b.dataset.tab==='events')loadEvents();if(b.dataset.tab==='planning')loadWeek();};
 
-async function load(){
-  const r=await get('admin/sessions');if(!r.ok)return;sessions=r.sessions;
-  $('empty').hidden=sessions.length>0;
-  $('list').innerHTML=sessions.map(s=>`<tr><td>${fmtD(s.date)}</td><td><b>${esc(s.name)}</b></td><td class="hide-sm">${esc(s.type)}</td><td>${s.count}</td>
-   <td><span class="badge ${s.open?'':'off'}">${s.open?'OUVERT':'FERMÉ'}</span></td>
+// ---------- PLANNING ----------
+let week=[];
+async function loadWeek(){
+  const monday=mondayOf($('weekDate').value||new Date().toISOString().slice(0,10));$('weekDate').value=monday;
+  $('weekTable').innerHTML='<p class="muted">Chargement…</p>';
+  const r=await get('admin/week?monday='+monday);if(!r.ok){$('weekTable').innerHTML=`<p class="err">${esc(r.error)}</p>`;return;}
+  week=r.courses;renderWeek();
+}
+function renderWeek(){
+  const f=$('promoFilter').value,list=week.filter(c=>!f||c.promotion===f),monday=$('weekDate').value;
+  const noRoom=list.filter(c=>!c.salle&&!/externship|internship|stage/i.test(c.cours)).length,noT=list.filter(c=>!c.enseignant&&!/externship|internship|stage/i.test(c.cours)).length;
+  $('weekInfo').textContent=`Semaine du ${fmtD(monday)} au ${fmtD(addDays(monday,4))} · ${list.length} cours${list.length?` · ${noRoom} sans salle · ${noT} sans enseignant`:''}`;
+  if(!list.length){$('weekTable').innerHTML='<p class="muted">Aucun cours cette semaine. Importez le planning dans l’onglet « Importer un planning ».</p>';return;}
+  let html='',cur='';
+  for(const c of list){
+    if(c.date!==cur){if(cur)html+='</tbody></table>';cur=c.date;const d=new Date(c.date+'T12:00:00');
+      html+=`<div class="day">${JOURS[(d.getDay()+6)%7]} ${fmtD(c.date)}</div><table><thead><tr><th>Horaire</th><th>Promotion</th><th>Cours</th><th>Salle</th><th>Enseignant</th><th>Email enseignant</th><th>Présents</th><th></th></tr></thead><tbody>`;}
+    const ext=/externship|internship|stage/i.test(c.cours);
+    html+=`<tr data-id="${esc(c.id)}"><td style="white-space:nowrap"><input class="cell" data-f="debut" value="${esc(c.debut)}" style="min-width:64px;width:64px"> – <input class="cell" data-f="fin" value="${esc(c.fin)}" style="min-width:64px;width:64px"></td>
+      <td style="white-space:nowrap">${esc(c.promotion)}${c.groupe?`<br><span class="pill">${esc(c.groupe)}</span>`:''}</td>
+      <td style="min-width:220px">${esc(c.cours)}${c.history?.length?'<br><span class="badge" title="Modifié">MODIFIÉ</span>':''}</td>
+      <td><input class="cell ${!c.salle&&!ext?'miss':''}" data-f="salle" value="${esc(c.salle)}"></td>
+      <td><input class="cell ${!c.enseignant&&!ext?'miss':''}" data-f="enseignant" value="${esc(c.enseignant)}"></td>
+      <td><input class="cell" data-f="emailEns" value="${esc(c.emailEns||'')}" placeholder="prenom.nom@um6p.ma"></td>
+      <td>${c.count}</td>
+      <td style="white-space:nowrap"><a class="btn small" style="min-height:34px;font-size:13px;padding:0 12px" href="/screen.html?id=${encodeURIComponent(c.id)}" target="_blank">QR</a> <button class="ghost small" data-d="${esc(c.id)}">Présences</button></td></tr>`;
+  }
+  $('weekTable').innerHTML=html+'</tbody></table>';
+}
+$('weekTable').addEventListener('change',async e=>{
+  const inp=e.target.closest('input.cell');if(!inp)return;const id=inp.closest('tr').dataset.id;
+  const r=await post('admin/course',{id,[inp.dataset.f]:inp.value});
+  if(!r.ok){alertBox(r.error);return;}
+  const i=week.findIndex(c=>c.id===id);week[i]={...week[i],...r.course};inp.classList.add('saved');inp.classList.remove('miss');setTimeout(()=>inp.classList.remove('saved'),1500);
+});
+$('weekTable').addEventListener('click',e=>{const b=e.target.closest('button[data-d]');if(b)showDetail(b.dataset.d);});
+$('weekDate').onchange=loadWeek;$('promoFilter').onchange=renderWeek;
+$('prevW').onclick=()=>{$('weekDate').value=addDays(mondayOf($('weekDate').value),-7);loadWeek();};
+$('nextW').onclick=()=>{$('weekDate').value=addDays(mondayOf($('weekDate').value),7);loadWeek();};
+$('exportWeek').onclick=()=>{const f=$('promoFilter').value;xlsx('Planning semaine du '+$('weekDate').value+(f?' '+f:''),['Date','Début','Fin','Promotion','Groupe','Cours','Salle','Enseignant','Email enseignant','Présents'],week.filter(c=>!f||c.promotion===f).map(c=>[c.date,c.debut,c.fin,c.promotion,c.groupe,c.cours,c.salle,c.enseignant,c.emailEns||'',c.count]));};
+function alertBox(m){$('weekInfo').textContent='⚠ '+m;}
+
+// ---------- IMPORT ----------
+let parsed=[];
+$('files').onchange=async e=>{
+  parsed=[];$('fileList').innerHTML='';$('importMsg').textContent='';
+  for(const f of e.target.files){
+    try{const wb=XLSX.read(await f.arrayBuffer());parsed.push({name:f.name,wb,...FMSImport.parseWorkbook(wb,f.name)});}
+    catch(x){parsed.push({name:f.name,format:'Fichier illisible',rows:[],promotion:'',monday:''});}
+  }
+  renderFiles();
+};
+function renderFiles(){
+  $('fileList').innerHTML=parsed.map((p,i)=>{
+    const weeks=new Set(p.rows.map(r=>mondayOf(r.date))).size;
+    const needPromo=p.format.startsWith('Planning'),needMonday=p.format.includes('semaine (Kiné');
+    return `<div class="file" data-i="${i}"><b>${esc(p.name)}</b><div class="muted">${esc(p.format)}</div>
+    <div class="grid" style="margin-top:6px">${needPromo?`<div><label>Promotion</label><select data-k="promotion"><option value="">— choisir —</option>${PROMOS.map(x=>`<option ${x===p.promotion?'selected':''}>${x}</option>`).join('')}</select></div>`:''}
+    ${needMonday?`<div><label>Lundi de la semaine</label><input type="date" data-k="monday" value="${esc(p.monday)}"></div>`:''}
+    <div><label>Résultat</label><div style="padding-top:10px"><b>${p.rows.length}</b> cours${weeks>1?` sur ${weeks} semaines`:''}</div></div></div>
+    ${p.rows.length?`<details style="margin-top:8px"><summary class="muted">Aperçu</summary><div style="overflow-x:auto"><table>${p.rows.slice(0,8).map(r=>`<tr><td>${fmtD(r.date)}</td><td>${r.debut}–${r.fin}</td><td>${esc(r.cours)}</td><td>${esc(r.groupe)}</td><td>${esc(r.salle)}</td><td>${esc(r.enseignant)}</td></tr>`).join('')}</table></div></details>`:''}</div>`;}).join('');
+  $('importAll').hidden=!parsed.some(p=>p.rows.length);
+}
+$('fileList').addEventListener('change',e=>{
+  const box=e.target.closest('.file');if(!box)return;const p=parsed[+box.dataset.i];
+  const opts={promotion:box.querySelector('[data-k=promotion]')?.value||'',monday:box.querySelector('[data-k=monday]')?.value||''};
+  Object.assign(p,FMSImport.parseWorkbook(p.wb,p.name,opts),opts);renderFiles();
+});
+$('importAll').onclick=async()=>{
+  const all=parsed.flatMap(p=>p.rows);$('importAll').disabled=true;let done=0,c=0,u=0,rm=0;
+  // on envoie chaque (promotion, semaine) en entier dans un même lot
+  const groups=new Map();for(const r of all){const k=r.promotion+'|'+mondayOf(r.date);if(!groups.has(k))groups.set(k,[]);groups.get(k).push(r);}
+  const batches=[];let cur=[];for(const g of groups.values()){if(cur.length&&cur.length+g.length>400){batches.push(cur);cur=[];}cur=cur.concat(g);}if(cur.length)batches.push(cur);
+  for(const b of batches){
+    $('importMsg').textContent=`Import en cours… ${done}/${all.length}`;
+    const r=await post('admin/import',{courses:b});
+    if(!r.ok){$('importMsg').textContent='Erreur : '+r.error;$('importAll').disabled=false;return;}
+    done+=b.length;c+=r.created;u+=r.updated;rm+=r.removed;
+  }
+  $('importMsg').textContent=`Terminé : ${c} cours ajoutés, ${u} mis à jour${rm?`, ${rm} retirés`:''}.`;$('importAll').disabled=false;
+};
+
+// ---------- PROMOTIONS ----------
+let pendingStudents=[];
+async function loadPromos(){
+  const r=await get('admin/promos');const by=new Map((r.promos||[]).map(p=>[p.name,p]));
+  $('promoList').innerHTML=PROMOS.map(p=>{const x=by.get(p);return `<tr><td>${p}</td><td>${x?x.count:'<span class="pill">aucune liste</span>'}</td><td>${x?new Date(x.updatedAt).toLocaleDateString('fr-FR'):''}</td></tr>`;}).join('');
+}
+$('promoFile').onchange=async e=>{const f=e.target.files[0];if(!f)return;const wb=XLSX.read(await f.arrayBuffer());pendingStudents=FMSImport.parseStudents(XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]],{defval:''}));showStudents();};
+$('promoPreview').onclick=()=>{pendingStudents=FMSImport.parseStudents($('promoText').value);showStudents();};
+function showStudents(){
+  $('promoMsg').textContent=pendingStudents.length?`${pendingStudents.length} étudiants trouvés pour ${$('promoSel').value}.`:'Aucun étudiant reconnu.';
+  $('promoSave').disabled=!pendingStudents.length;
+  $('promoRows').innerHTML=pendingStudents.map((s,i)=>`<tr><td>${i+1}</td><td>${esc(s.nom)}</td><td>${esc(s.prenom)}</td><td>${esc(s.email)}</td><td>${esc(s.groupe)}</td></tr>`).join('');
+}
+$('promoSave').onclick=async()=>{const r=await post('admin/promos',{name:$('promoSel').value,students:pendingStudents});
+  $('promoMsg').textContent=r.ok?`Liste enregistrée : ${r.count} étudiants en ${$('promoSel').value}.`:r.error;if(r.ok){pendingStudents=[];$('promoSave').disabled=true;$('promoText').value='';$('promoRows').innerHTML='';loadPromos();}};
+
+// ---------- ÉVÉNEMENTS ----------
+let sessions=[];
+async function loadEvents(){
+  const r=await get('admin/sessions');if(!r.ok)return;sessions=r.sessions;$('empty').hidden=sessions.length>0;
+  $('list').innerHTML=sessions.map(s=>`<tr><td>${fmtD(s.date)}</td><td><b>${esc(s.name)}</b></td><td>${s.count}</td><td><span class="badge ${s.open?'':'off'}">${s.open?'OUVERT':'FERMÉ'}</span></td>
    <td class="row" style="justify-content:flex-end"><a class="btn small" style="min-height:36px;font-size:13px;padding:0 14px" href="/screen.html?id=${encodeURIComponent(s.id)}" target="_blank">QR</a>
    <button class="ghost small" data-d="${esc(s.id)}">Présences</button><button class="ghost small" data-o="${esc(s.id)}">${s.open?'Fermer':'Rouvrir'}</button><button class="danger small" data-x="${esc(s.id)}">Supprimer</button></td></tr>`).join('');
 }
-$('list').onclick=async e=>{
-  const b=e.target.closest('button');if(!b)return;
-  if(b.dataset.d)return show(b.dataset.d);
-  if(b.dataset.o){const s=sessions.find(x=>x.id===b.dataset.o);await post('admin/open',{id:s.id,open:!s.open});return load();}
-  if(b.dataset.x){const s=sessions.find(x=>x.id===b.dataset.x);if(!confirm(`Supprimer « ${s.name} » et ses ${s.count} pointages ? C'est définitif.`))return;await post('admin/delete',{id:s.id});if(current?.id===s.id)$('detail').hidden=true;return load();}
-};
-$('nf').onsubmit=async e=>{e.preventDefault();$('nerr').textContent='';
-  const r=await post('admin/sessions',{name:$('nname').value,type:$('ntype').value,date:$('ndate').value});
-  if(!r.ok){$('nerr').textContent=r.error;return;}$('nname').value='';await load();show(r.session.id);};
+$('list').onclick=async e=>{const b=e.target.closest('button');if(!b)return;
+  if(b.dataset.d)return showDetail(b.dataset.d);
+  if(b.dataset.o){const s=sessions.find(x=>x.id===b.dataset.o);await post('admin/open',{id:s.id,open:!s.open});return loadEvents();}
+  if(b.dataset.x){const s=sessions.find(x=>x.id===b.dataset.x);if(!confirm(`Supprimer « ${s.name} » et ses ${s.count} pointages ? C'est définitif.`))return;await post('admin/delete',{id:s.id});$('detail').hidden=true;return loadEvents();}};
+$('nf').onsubmit=async e=>{e.preventDefault();$('nerr').textContent='';const r=await post('admin/sessions',{name:$('nname').value,type:$('ntype').value,date:$('ndate').value});
+  if(!r.ok){$('nerr').textContent=r.error;return;}$('nname').value='';await loadEvents();showDetail(r.session.id);};
+$('exportAll').onclick=async()=>{const r=await get('admin/attendance');if(!r.ok)return;xlsx('Présences événements',['Date','Événement','Nom','Email','Heure'],r.rows.map(x=>[x.date,x.sessionName,x.name,x.email,new Date(x.at).toLocaleString('fr-FR')]));};
 
-async function show(id){
-  current=sessions.find(s=>s.id===id);cmp=null;$('cmpsum').textContent='';$('cmpexport').hidden=true;$('statusCol').hidden=true;
-  $('detail').hidden=false;$('dname').textContent=current.name;$('dmeta').textContent=current.type+' · '+fmtD(current.date);
+// ---------- DÉTAIL ----------
+let current=null,rows=[],table=[];
+async function showDetail(id){
+  const c=week.find(x=>x.id===id),s=sessions.find(x=>x.id===id);current=c?{...c,name:c.cours,isCourse:true}:s;
+  $('detail').hidden=false;$('dname').textContent=current.name;
+  $('dmeta').textContent=c?`${c.promotion}${c.groupe?' · '+c.groupe:''} · ${fmtD(c.date)} · ${c.debut}–${c.fin}${c.salle?' · '+c.salle:''}${c.enseignant?' · '+c.enseignant:''}`:`${s.type} · ${fmtD(s.date)}`;
   $('dscreen').href='/screen.html?id='+encodeURIComponent(id);
-  const r=await get('admin/attendance?id='+encodeURIComponent(id));rows=r.ok?r.rows:[];render();$('detail').scrollIntoView({behavior:'smooth'});
+  const r=await get('admin/attendance?id='+encodeURIComponent(id));rows=r.ok?r.rows:[];
+  $('manualCmp').hidden=!!r.roster;
+  if(r.roster){
+    const by=new Map(rows.map(x=>[x.email,x]));const seen=new Set();
+    table=r.roster.map(st=>{seen.add(st.email);const x=by.get(st.email);return {name:`${st.prenom} ${st.nom}`.trim(),email:st.email,at:x?.at,status:x?'Présent':'Absent'};})
+      .concat(rows.filter(x=>!seen.has(x.email)).map(x=>({...x,status:'Hors liste'})));
+    table.sort((a,b)=>(a.status==='Absent')-(b.status==='Absent')||a.name.localeCompare(b.name));
+  } else {table=rows.map(x=>({...x,status:'Présent'}));if(c)$('manualCmp').hidden=false;}
+  if(c&&!r.roster)$('dsum').textContent='Aucune liste d’étudiants pour '+c.promotion+' : ajoutez-la dans « Promotions et étudiants ».';
+  render();$('detail').scrollIntoView({behavior:'smooth'});
 }
 function render(){
-  const list=cmp?cmp:rows.map(r=>({...r,status:'Présent'}));
-  $('rows').innerHTML=list.length?list.map(r=>`<tr><td>${esc(r.name)}</td><td>${esc(r.email)}</td><td>${r.at?fmtT(r.at):'—'}</td>${cmp?`<td><span class="badge ${r.status==='Absent'?'off':''}">${r.status.toUpperCase()}</span></td>`:''}<td>${r.at?`<button class="danger small" data-rm="${esc(r.email)}">Retirer</button>`:''}</td></tr>`).join(''):'<tr><td colspan="5" class="muted">Aucun pointage pour l’instant.</td></tr>';
+  const p=table.filter(x=>x.status==='Présent').length,a=table.filter(x=>x.status==='Absent').length,h=table.filter(x=>x.status==='Hors liste').length;
+  if(a||current?.isCourse&&table.length)$('dsum').textContent=`${p} présents · ${a} absents${h?` · ${h} hors liste`:''}${p+a?` · taux ${Math.round(p/(p+a)*100)} %`:''}`;
+  else if(!$('dsum').textContent.startsWith('Aucune liste'))$('dsum').textContent=`${p} présents`;
+  $('rows').innerHTML=table.length?table.map(x=>`<tr><td>${esc(x.name)}</td><td>${esc(x.email)}</td><td>${x.at?fmtT(x.at):'—'}</td><td><span class="badge ${x.status==='Absent'?'off':''}">${x.status.toUpperCase()}</span></td><td>${x.at?`<button class="danger small" data-rm="${esc(x.email)}">Retirer</button>`:''}</td></tr>`).join(''):'<tr><td colspan="5" class="muted">Aucun pointage pour l’instant.</td></tr>';
 }
-$('rows').onclick=async e=>{const b=e.target.closest('button[data-rm]');if(!b)return;if(!confirm('Retirer ce pointage ?'))return;await post('admin/remove-checkin',{id:current.id,email:b.dataset.rm});show(current.id);load();};
+$('rows').onclick=async e=>{const b=e.target.closest('button[data-rm]');if(!b)return;if(!confirm('Retirer ce pointage ?'))return;await post('admin/remove-checkin',{id:current.id,email:b.dataset.rm});showDetail(current.id);};
 $('dclose').onclick=()=>{$('detail').hidden=true;};
-$('dexport').onclick=()=>csv(safe('Présences '+current.name+' '+current.date),['Nom','Email','Heure de pointage'],rows.map(r=>[r.name,r.email,new Date(r.at).toLocaleString('fr-FR')]));
-
-$('compare').onclick=()=>{
-  const lines=$('roster').value.split(/\r?\n/).map(l=>l.trim()).filter(Boolean);
-  const expected=[];for(const l of lines){const m=l.match(/[^\s;,\t<>]+@[^\s;,\t<>]+/);if(!m)continue;const email=m[0].toLowerCase();const name=l.replace(m[0],'').replace(/[;,\t<>]/g,' ').replace(/\s+/g,' ').trim();expected.push({email,name});}
-  if(!expected.length){$('cmpsum').textContent='Aucun email trouvé dans la liste.';return;}
-  const byEmail=new Map(rows.map(r=>[r.email,r]));const seen=new Set();
-  cmp=expected.filter(x=>!seen.has(x.email)&&seen.add(x.email)).map(x=>{const r=byEmail.get(x.email);return r?{...r,status:'Présent'}:{name:x.name||'—',email:x.email,status:'Absent'};});
-  const extra=rows.filter(r=>!seen.has(r.email)).map(r=>({...r,status:'Hors liste'}));cmp=cmp.concat(extra);
-  const p=cmp.filter(x=>x.status==='Présent').length,a=cmp.filter(x=>x.status==='Absent').length;
-  $('cmpsum').textContent=`${p} présents · ${a} absents${extra.length?` · ${extra.length} hors liste`:''} · taux ${Math.round(p/(p+a)*100)} %`;
-  $('statusCol').hidden=false;$('cmpexport').hidden=false;render();
-};
-$('cmpexport').onclick=()=>csv(safe('Présents et absents '+current.name+' '+current.date),['Nom','Email','Statut','Heure de pointage'],cmp.map(r=>[r.name,r.email,r.status,r.at?new Date(r.at).toLocaleString('fr-FR'):'']));
-$('exportAll').onclick=async()=>{const r=await get('admin/attendance');if(!r.ok)return;
-  csv('Toutes les présences',['Date','Séance','Type','Nom','Email','Heure de pointage'],r.rows.sort((a,b)=>(a.date+a.at).localeCompare(b.date+b.at)).map(x=>[x.date,x.sessionName,x.type,x.name,x.email,new Date(x.at).toLocaleString('fr-FR')]));};
+$('dexport').onclick=()=>xlsx(`Présences ${current.name} ${current.date}${current.promotion?' '+current.promotion:''}`,['Nom','Email','Statut','Heure de pointage'],table.map(x=>[x.name,x.email,x.status,x.at?new Date(x.at).toLocaleString('fr-FR'):'']));
+$('compare').onclick=()=>{const exp=FMSImport.parseStudents($('roster').value);if(!exp.length)return;
+  const by=new Map(rows.map(x=>[x.email,x]));const seen=new Set();
+  table=exp.map(st=>{seen.add(st.email);const x=by.get(st.email);return {name:x?.name||`${st.prenom} ${st.nom}`.trim(),email:st.email,at:x?.at,status:x?'Présent':'Absent'};}).concat(rows.filter(x=>!seen.has(x.email)).map(x=>({...x,status:'Hors liste'})));render();};
 start();
 }
 </script>

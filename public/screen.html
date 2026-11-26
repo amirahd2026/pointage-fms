@@ -65,7 +65,7 @@ async function refresh(){
     const r=await fetch('/api/admin/token?id='+encodeURIComponent(id),{headers:{'x-admin-key':key},cache:'no-store'}).then(r=>r.json());
     if(!r.ok){document.getElementById('name').textContent=r.error;if(/administrateur/.test(r.error)){try{sessionStorage.removeItem('pt_admin');}catch(e){}}setTimeout(refresh,5000);return;}
     document.getElementById('name').textContent=r.name;
-    document.getElementById('meta').textContent=r.type+' · '+new Date(r.date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'});
+    document.getElementById('meta').textContent=new Date(r.date+'T12:00:00').toLocaleDateString('fr-FR',{weekday:'long',day:'numeric',month:'long',year:'numeric'})+' · '+(r.sub||r.type);
     document.getElementById('count').textContent=r.count;
     open=r.open;document.getElementById('toggle').textContent=open?'Fermer le pointage':'Rouvrir le pointage';
     const box=document.getElementById('box');

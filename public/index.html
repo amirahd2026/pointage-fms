@@ -55,7 +55,7 @@ else{
   api('claim',{id,t,device}).then(r=>{
     if(!r.ok){fatal(r.error);return;}
     pass=r.pass;ts=r.ts;
-    $('main').hidden=false;$('stype').textContent=r.session.type.toUpperCase();$('sname').textContent=r.session.name;$('sdate').textContent=fmtDate(r.session.date);
+    $('main').hidden=false;$('stype').textContent=r.session.type.toUpperCase();$('sname').textContent=r.session.name;$('sdate').textContent=fmtDate(r.session.date)+(r.session.debut?` · ${r.session.debut}–${r.session.fin}`:'')+(r.session.promotion?` · ${r.session.promotion}`:'');
     const tick=()=>{const left=Math.max(0,Math.round((ts+4*60000-Date.now())/1000));$('timer').textContent=left?`Temps restant pour valider : ${Math.floor(left/60)}:${String(left%60).padStart(2,'0')}`:'Délai dépassé : scannez à nouveau le QR code.';if(!left){$('go').disabled=true;clearInterval(timerId);}};
     tick();timerId=setInterval(tick,1000);
   }).catch(()=>fatal('Connexion impossible. Vérifiez votre accès à Internet puis rescannez le QR code.'));
